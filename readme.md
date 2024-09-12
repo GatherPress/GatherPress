@@ -29,7 +29,7 @@ This project is for the collaborative effort to build a compelling event managem
 
 We're creating the very network features we need to host events and gather well.
 
-https://www.youtube.com/watch?v=BnYS36C5d38&t=2s
+https://gatherpress.org/demovideo
 
 
 ### Features
@@ -80,6 +80,11 @@ This plugin leverages the following third-party libraries for various functional
 
 ## Installation
 
+### From the WordPress.org plugin repository
+1. Install it in your WordPress instance: go to WP Admin Plugins > Add new plugin. Search for `gatherpress`. Once found, click `Install`.
+2. Activate the plugin.
+
+### From the file downloaded from our GitHub repository
 1. Download the plugin: you'll find the latest release on the GatherPress GitHub repository, under [Releases](https://github.com/GatherPress/gatherpress/releases) > Assets and download `gatherpress.zip`.
 2. Install it in your WordPress instance: go to WP Admin Plugins > Add new plugin. Choose the `gatherpress.zip` file you just downloaded.
 3. Activate the plugin.
@@ -105,8 +110,10 @@ In WP Admin, go to `Events`  > `Settings`.
 
 You can change different settings such as:
 - Show publish date as event date for events.
+- The Map provider
 - The default maximum limit of attendees to an event.
 - Anonymous RSVP.
+- Not attending option.
 - Date Format.
 - Time Format.
 - Display the timezone for scheduled events.
@@ -140,10 +147,6 @@ In the Venue block, you can define:
 In WP Admin, go to `Events`  > `Topics`.
 
 Topics are like post categories, but for events.
-
-## Contribute
-
-If you wish to share in the collaborative of work to build _GatherPress_, please drop us a line either via [WordPress Slack](https://make.wordpress.org/chat/) or on [GatherPress.org](htps://gatherpress.org/get-involved). The development location of the GatherPress project can be found at [https://github.com/gatherpress/gatherpress](https://github.com/gatherpress/gatherpress). All contributions are welcome: code, design, user interface, documentation, translation, and more.
 
 ### Collaborator Access
 
@@ -186,28 +189,3 @@ Yes, GatherPress can be run on a network of sites. The additional database table
 
 GatherPress can also be activated per site.
 
-### What’s about the PRO version?
-
-As a Community powered plugin, GatherPress is already the PRO-version.
-
-Because we strive for close-to-core development, love decisions - not options and follow a lot of well known best-practices within the WordPress space, we can and do focus on what matters most - powering our community's event management needs.
-
-GatherPress‘ best-practices:
-
-- Tested & validated against [WordPress Coding Standards](https://developer.wordpress.org/coding-standards/wordpress-coding-standards/)
-- Not only once, but consequently tested & validated against the [WordPress plugin review guidelines](https://github.com/WordPress/plugin-check-action).
-- [JavaScript & PHP Unit tests](https://sonarcloud.io/summary/new_code?id=GatherPress_gatherpress&branch=main) are covering almost 80% of the whole codebase.
-
-### Reminder that GatherPress is still in Alpha
-
-As we continue to refine and develop the plugin, please use the [GatherPress Alpha](https://github.com/GatherPress/gatherpress-alpha) plugin alongside the core GatherPress plugin. The Alpha plugin manages breaking changes easily: just make sure it is up-to-date, activate it, go to the Alpha section under GatherPress Settings, and click "Fix GatherPress!" after updating GatherPress. This process helps us avoid technical debt as we work towards launching version 1.0.0 of the plugin.
-
-## Changelog
-
-See complete changelog at https://github.com/GatherPress/gatherpress/releases.
-
-## Upgrade Notice
-
-### 1.0.0
-
-See: https://gatherpress.org/releases/version-1-0-0
