@@ -1,43 +1,180 @@
 name: E2E Tests
+
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
+  pull_request:
+    paths:
+    - '.github/workflows/e2e-tests.yml'
+    - 'build/**'
+    - 'includes/**'
+    - 'src/**'
+    - 'test/e2e/**'
+    - '*.php'
+    - 'package.*'
+
+# Cancels all previous workflow runs for pull requests that have not completed.
+concurrency:
+  # The concurrency group contains the workflow name and the branch name for pull requests
+  # or the commit hash for any other events.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: true
+
 
 jobs:
-  playwright:
-    name: Playwright Tests
+  e2e-tests:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1 # Prevent parallel runs to make use of the caching for node_modules and playwright browsers
+      matrix:
+          php: [
+            '7.4',
+            '8.3'
+          ]
+          wp: [
+            '6.6',
+            'latest'
+          ]
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Log debug information
-        run: |
-          npm --version
-          node --version
-          git --version
-          php --version
-          composer --version
+    - uses: actions/cache@v4
+      id: playwright-cache
+      with:
+        path: |
+          ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
 
-      - name: Install NodeJS
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-          # Enable built-in functionality for caching and restoring dependencies, which is disabled by default.
-          # The actions/setup-node uses actions/cache under the hood.
-          # https://github.com/actions/setup-node#caching-global-packages-data
-          cache: 'npm'
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: '.nvmrc'
+        # Enable built-in functionality for caching and restoring dependencies, which is disabled by default.
+        # The actions/setup-node uses actions/cache under the hood.
+        # https://github.com/actions/setup-node#caching-global-packages-data
+        cache: 'npm'
 
-      - name: NPM install
-        run: npm ci --legacy-peer-deps
+    # Restoring the short lived node_modules cache
+    # to be used across all workflows running on the last commit.
+    # https://github.com/actions/cache/blob/main/caching-strategies.md#creating-a-short-lived-cache
+    - uses: actions/cache/restore@v4
+      id: node_modules-cache
+      with:
+        path: |
+          ./node_modules
+        key: ${{ runner.os }}-node_modules-${{ github.sha }}-${{ hashFiles('package-lock.json') }}
 
-      - name: Playwright install
-        run: npx playwright install --with-deps
+    - name: NPM install
+      if: steps.node_modules-cache.outputs.cache-hit != 'true'
+      run: npm ci --legacy-peer-deps
 
-      - name: Run Playwright
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WP_ADMIN_PASSWORD: ${{ secrets.WP_ADMIN_PASSWORD }}
-        run: npm run test:e2e
-        if: ${{ success() || failure() }}
+    # Creating a short lived node_modules cache
+    - uses: actions/cache/save@v4
+      if: steps.node_modules-cache.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ./node_modules
+        key: ${{ steps.node_modules-cache.outputs.cache-primary-key }}
+
+    - name: Install Playwright dependencies
+      run: npx playwright install --with-deps
+      if: steps.playwright-cache.outputs.cache-hit != 'true'
+    - run: npx playwright install-deps
+      if: steps.playwright-cache.outputs.cache-hit == 'true'
+
+    - name: Prepare preferredVersions for blueprint
+      # playground/cli ignores --php & --wp flags when --blueprint is set
+      #
+      # I created an issue at:
+      # https://github.com/WordPress/playground-tools/issues/352
+      run: |
+        preferredVersions='{
+          "php": "${{ matrix.php }}",
+          "wp": "${{ matrix.wp }}"
+        }'
+        echo "Use jq to prepend the preferred versions to the existing blueprint JSON file."
+        jq --argjson preferredVersions "$preferredVersions" '{preferredVersions: $preferredVersions} + .' ./test/e2e/blueprint.json > temp.blueprint.json
+
+    - name: Starting Playground, staring Playwright & running the tests
+      # This is kind of a hack PART 1/2,
+      # to make sure Playwright DOES NOT start the webserver on its own.
+      #
+      # Part 2/2 is the "command: undefined," declaration
+      # in test/e2e/playwright.config.ts
+      #
+      # While auto-loading the webserver when needed sounded nice, it introduced a race-condition
+      # between the setup of Playground and Playwrights own start event.
+      # Playwright listens for the availability of the webserver relatively simple,
+      # as soon as there is a status code 200, Playwright starts all engines.
+      #
+      # Unfortunately Playground is not ready at this point, it hast started WordPress
+      # and is going to start stepping through the blueprint, but hasn't loaded GatherPress nor imported any data;
+      # Resulting in failing tests.
+      #
+      # It was not possible (for me) to keep the setup of Playground in a separate step,
+      # why this "run > sleep > run" became necessary.
+      # The setup process usually takes about 20sec, so 60 is just a good extra, to not run into errors.
+      #
+      # The sleep step, should help making sure Playwright runs only, when this is DONE & READY.
+      #
+      # Because it seems to be a problem to "wait on webServer.command" https://github.com/microsoft/playwright/issues/11811
+      # & "it seems that globalSetup runs before webServer is started." https://github.com/microsoft/playwright/issues/11811#issuecomment-1040732201
+
+      run: |
+        npm run playground:mount -- --blueprint=./temp.blueprint.json & \
+        sleep 60 && \
+        echo 'Playground is ready now, lets run some end-to-end tests.' && \
+        # DEBUG=pw:api,pw:webserver \
+        xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" -- \
+        npm run test:e2e
+
+
+    - name: Archive debug artifacts (screenshots, traces)
+      uses: actions/upload-artifact@v4
+      if: ${{ ! cancelled() }}
+      with:
+        name: failures-artifacts--php-${{ matrix.php }}-wp-${{ matrix.wp }}
+        path: artifacts/test-results/
+        if-no-files-found: ignore
+
+
+    - name: Archive flaky tests report
+      uses: actions/upload-artifact@v4
+      if: ${{ ! cancelled() }}
+      with:
+          name: flaky-tests-report--php-${{ matrix.php }}-wp-${{ matrix.wp }}
+          path: flaky-tests
+          if-no-files-found: ignore
+
+
+  # merge-artifacts:
+  #   name: Merge Artifacts
+  #   if: ${{ ! cancelled() }}
+  #   needs: [e2e-tests]
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     has-flaky-test-report: ${{ !!steps.merge-flaky-tests-reports.outputs.artifact-id }}
+  #   steps:
+  #     - name: Merge failures artifacts
+  #       uses: actions/upload-artifact/merge@v4
+  #       # Don't fail the job if there aren't any artifacts to merge.
+  #       continue-on-error: true
+  #       with:
+  #         name: failures-artifacts
+  #         # Retain the merged artifacts in case of a rerun.
+  #         pattern: failures-artifacts*
+  #         delete-merged: true
+
+  #     - name: Merge flaky tests reports
+  #       id: merge-flaky-tests-reports
+  #       uses: actions/upload-artifact/merge@v4
+  #       continue-on-error: true
+  #       with:
+  #         name: flaky-tests-report
+  #         pattern: flaky-tests-report*
+  #         delete-merged: true
